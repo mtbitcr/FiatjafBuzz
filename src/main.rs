@@ -1,5 +1,6 @@
-use chrono::{Datelike, Local};
+use chrono::{Datelike, Utc, Weekday};
 use dotenv::dotenv;
+use log::error;
 use nostr_sdk::{Client, EventBuilder, Keys, Result};
 use std::env;
 use std::str::FromStr;
@@ -24,20 +25,22 @@ async fn main() -> Result<()> {
     client.connect().await;
 
     loop {
-        let now = Local::now();
-        let message = if now.weekday().number_from_monday() >= 6 {
-            MESSAGE_TO_PUBLISH_WEEKEND
-        } else {
-            MESSAGE_TO_PUBLISH_WEEKDAY
+        let now = Utc::now();
+
+        let message = match now.weekday() {
+            Weekday::Sun | Weekday::Sat => MESSAGE_TO_PUBLISH_WEEKEND,
+            _ => MESSAGE_TO_PUBLISH_WEEKDAY,
         };
 
         let event = EventBuilder::text_note(message)
             .build(keys.public_key)
             .sign(&keys)
-            .await
-            .unwrap();
-        client.send_event(event).await?;
+            .await?;
 
-        sleep(Duration::from_secs(TWO_DAYS_IN_SECONDS)).await;
+        if let Err(_e) = client.send_event(event).await {
+            error!("Could not send event, cause: {_e}");
+        }
+
+        sleep(Duration::from_secs(TWO_DAYS_IN_SECONDS)).await
     }
 }
